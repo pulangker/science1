@@ -1,0 +1,47 @@
+name: Build Sparrow Windows EXE
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Get Sparrow source
+        shell: powershell
+        run: |
+          git clone https://github.com/JeroenGar/sparrow.git sparrow-src
+
+      - name: Apply min separation patch
+        shell: powershell
+        run: |
+          cd sparrow-src
+          $io = Get-Content src/util/io.rs -Raw
+          if ($io -notmatch 'min_separation') {
+            $io = $io -replace '(pub rng_seed: Option<u64>,)', '$1`r`n`r`n    #[arg(long, default_value_t = 0.0)]`r`n    pub min_separation: f32,'
+            Set-Content -Encoding utf8 src/util/io.rs $io
+          }
+          $main = Get-Content src/main.rs -Raw
+          if ($main -notmatch 'min_item_separation') {
+            $main = $main -replace '(let args = MainCli::parse\(\);)', '$1`r`n    config.min_item_separation = (args.min_separation > 0.0).then_some(args.min_separation);'
+            Set-Content -Encoding utf8 src/main.rs $main
+          }
+
+      - name: Build
+        shell: powershell
+        run: |
+          cd sparrow-src
+          cargo build --release --features only_final_svg
+          Copy-Item target/release/sparrow.exe ../sparrow.exe
+
+      - name: Upload sparrow.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparrow-windows-exe
+          path: sparrow.exe
